@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key><string>com.ainkrad.plugin.leyline</string>
+    <key>CFBundleName</key><string>LeylinePlugin</string>
+    <key>CFBundleExecutable</key><string>LeylinePlugin</string>
+    <key>CFBundlePackageType</key><string>BNDL</string>
+    <key>NSPrincipalClass</key><string>LeylineEntryPoint</string>
+    <key>AinkradAppID</key><string>leyline</string>
+    <key>AinkradDisplayName</key><string>Leyline</string>
+    <key>AinkradIconSymbol</key><string>point.3.connected.trianglepath.dotted</string>
+    <key>AinkradAPIVersion</key><integer>3</integer>
+</dict>
+</plist>

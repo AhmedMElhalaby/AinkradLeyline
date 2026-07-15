@@ -21,8 +21,7 @@ public struct LeylineApp: AinkradApp {
     }
 
     public static func makeSettingsView(host: HostServices) -> AnyView {
-        AnyView(Text("Leyline stores connections and keys per workspace.")
-            .foregroundStyle(host.theme.tokens.foreground).padding())
+        AnyView(LeylineSettingsView(host: host))
     }
 
     public static func chromeFill(host: HostServices) -> Color? {

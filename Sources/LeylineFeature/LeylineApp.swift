@@ -17,7 +17,7 @@ public struct LeylineApp: AinkradApp {
     }
 
     public static func makeRootView(host: HostServices) -> AnyView {
-        AnyView(LeylineRootView(store: store(for: host), theme: host.theme))
+        AnyView(LeylineRootView(store: store(for: host), theme: host.theme, launcher: host.apps))
     }
 
     public static func makeSettingsView(host: HostServices) -> AnyView {

@@ -15,37 +15,74 @@ struct ConnectionEditorView: View {
     @State private var password = ""
     @State private var keyID: UUID?
 
+    private var t: HostThemeTokens { theme.tokens }
+    private var selectedKeyLabel: String { store.keys.first(where: { $0.id == keyID })?.label ?? "None" }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(existing == nil ? "New Connection" : "Edit Connection").font(.headline)
-            Form {
-                TextField("Label", text: $label)
-                TextField("Host", text: $host)
-                TextField("Port", text: $port)
-                TextField("Username", text: $username)
-                Picker("Auth", selection: $authMode) {
-                    Text("Password").tag(LeylineConnection.AuthMode.password)
-                    Text("Key").tag(LeylineConnection.AuthMode.key)
-                }.pickerStyle(.segmented)
-                if authMode == .password {
-                    SecureField("Password", text: $password)
-                } else {
-                    Picker("Key", selection: $keyID) {
-                        Text("None").tag(UUID?.none)
-                        ForEach(store.keys) { k in Text(k.label).tag(UUID?.some(k.id)) }
-                    }
-                }
+        VStack(alignment: .leading, spacing: 14) {
+            HudTitle(text: existing == nil ? "New Connection" : "Edit Connection", tokens: t)
+
+            HudField(label: "Label", placeholder: "Prod Web", text: $label, tokens: t)
+            HStack(alignment: .bottom, spacing: 10) {
+                HudField(label: "Host", placeholder: "example.com", text: $host, tokens: t)
+                HudField(label: "Port", placeholder: "22", text: $port, tokens: t).frame(width: 84)
             }
-            HStack {
+            HudField(label: "Username", placeholder: "deploy", text: $username, tokens: t)
+
+            labeled("Auth") {
+                HudSegmented(options: [(LeylineConnection.AuthMode.password, "Password"),
+                                       (.key, "Key")], selection: $authMode, tokens: t)
+            }
+
+            if authMode == .password {
+                HudField(label: "Password", text: $password, secure: true, tokens: t)
+            } else {
+                labeled("Key") { keyMenu }
+            }
+
+            HStack(spacing: 10) {
                 Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save") { save() }.keyboardShortcut(.defaultAction).disabled(host.isEmpty)
+                HudButton(title: "Cancel", tokens: t) { dismiss() }.keyboardShortcut(.cancelAction)
+                HudButton(title: "Save", systemImage: "checkmark", kind: .primary,
+                          disabled: host.isEmpty, tokens: t) { save() }
+                    .keyboardShortcut(.defaultAction)
             }
+            .padding(.top, 4)
         }
-        .padding(16)
-        .frame(width: 380)
-        .background(theme.tokens.surface)
+        .padding(18)
+        .frame(width: 400)
+        .background(LeylineHUD.sheetBackground(t))
+        .foregroundStyle(t.foreground)
         .onAppear(perform: load)
+    }
+
+    @ViewBuilder private func labeled<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .semibold, design: .monospaced)).kerning(1.5)
+                .foregroundStyle(t.foreground.opacity(0.5))
+            content()
+        }
+    }
+
+    private var keyMenu: some View {
+        Menu {
+            Button("None") { keyID = nil }
+            ForEach(store.keys) { k in Button(k.label) { keyID = k.id } }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "key.fill").font(.system(size: 10)).foregroundStyle(t.accentTertiary)
+                Text(selectedKeyLabel).font(.system(size: 13)).foregroundStyle(t.foreground)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(t.foreground.opacity(0.5))
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(t.surface.opacity(0.6)))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(t.accentPrimary.opacity(0.18), lineWidth: 1))
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
     }
 
     private func load() {

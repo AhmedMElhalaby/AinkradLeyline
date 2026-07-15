@@ -14,7 +14,7 @@ settings:
 packages:
   AinkradAppKit:
     url: https://github.com/AhmedMElhalaby/AinkradAppKit
-    revision: 45ed078cf445b38d6a187ab46455f985d8265694
+    revision: cf34481be5d2f633f748a448c4260daf632e5552
 targets:
   LeylineFeature:
     type: library.static

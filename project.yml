@@ -13,8 +13,7 @@ settings:
     EAGER_LINKING: NO
 packages:
   AinkradAppKit:
-    url: https://github.com/AhmedMElhalaby/AinkradAppKit
-    revision: 45ed078cf445b38d6a187ab46455f985d8265694
+    path: ../AinkradAppKit
 targets:
   LeylineFeature:
     type: library.static

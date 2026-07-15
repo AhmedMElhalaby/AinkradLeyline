@@ -10,6 +10,6 @@
     <key>AinkradAppID</key><string>leyline</string>
     <key>AinkradDisplayName</key><string>Leyline</string>
     <key>AinkradIconSymbol</key><string>point.3.connected.trianglepath.dotted</string>
-    <key>AinkradAPIVersion</key><integer>3</integer>
+    <key>AinkradAPIVersion</key><integer>4</integer>
 </dict>
 </plist>

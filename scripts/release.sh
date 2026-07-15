@@ -14,7 +14,7 @@ rm -rf dist && mkdir -p dist
 SHA="$(shasum -a 256 "dist/${ID}.bundle.zip" | awk '{print $1}')"
 
 cat > dist/ainkrad-plugin.json <<JSON
-{ "id": "$ID", "name": "$NAME", "icon": "$ICON", "description": "$DESC", "apiVersion": 3, "sha256": "$SHA" }
+{ "id": "$ID", "name": "$NAME", "icon": "$ICON", "description": "$DESC", "apiVersion": 4, "sha256": "$SHA" }
 JSON
 
 gh release create "$VERSION" dist/ainkrad-plugin.json "dist/${ID}.bundle.zip" \

@@ -4,6 +4,7 @@ import AinkradAppKit
 struct LeylineRootView: View {
     @Bindable var store: LeylineStore
     let theme: HostTheme
+    let launcher: PluginAppLauncher
 
     @State private var query = ""
     @State private var editing: LeylineConnection?
@@ -60,6 +61,12 @@ struct LeylineRootView: View {
             Image(systemName: conn.authMode == .key ? "key.fill" : "lock.fill")
                 .foregroundStyle(theme.tokens.foreground.opacity(0.4))
             Button {
+                connect(conn)
+            } label: {
+                Image(systemName: "bolt.horizontal.circle")
+            }
+            .buttonStyle(.plain).help("Connect (opens Terminal)")
+            Button {
                 copyCommand(conn)
             } label: {
                 Image(systemName: copied == conn.id ? "checkmark" : "doc.on.doc")
@@ -79,5 +86,18 @@ struct LeylineRootView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(SSHCommand.string(for: conn), forType: .string)
         copied = conn.id
+    }
+
+    private func connect(_ conn: LeylineConnection) {
+        var identityFile: String?
+        if conn.authMode == .key, let keyID = conn.keyID,
+           let key = store.keys.first(where: { $0.id == keyID }),
+           let material = store.privateKey(for: key) {
+            identityFile = try? SSHKeyMaterializer.materialize(keyID: keyID, privateKey: material)
+        }
+        let payload = SSHLaunchPayload(
+            host: conn.host, port: conn.port, username: conn.username, identityFile: identityFile
+        ).json
+        launcher.open(appID: "terminal", payload: payload)
     }
 }

@@ -11,5 +11,6 @@
     <key>AinkradDisplayName</key><string>Leyline</string>
     <key>AinkradIconSymbol</key><string>point.3.connected.trianglepath.dotted</string>
     <key>AinkradAPIVersion</key><integer>4</integer>
+    <key>AinkradPresentation</key><string>overlay</string>
 </dict>
 </plist>

@@ -26,9 +26,24 @@ struct LeylineRootView: View {
             content
         }
         .background(Color.clear)                       // let the host HUD panel blur show through
-        .sheet(isPresented: $showingNew) { ConnectionEditorView(store: store, theme: theme, existing: nil) }
-        .sheet(item: $editing) { ConnectionEditorView(store: store, theme: theme, existing: $0) }
-        .sheet(isPresented: $showingKeys) { KeyVaultView(store: store, theme: theme) }
+        // In-surface HUD overlays (chamfer + dim + scrim/Esc dismiss), scoped
+        // to this root view — never a native `.sheet`. The `editing` modal is
+        // driven by the item's presence; `editing` itself stays available to
+        // the hosted content for the duration the modal is up.
+        .ainkradModal(isPresented: $showingNew) {
+            ConnectionEditorView(store: store, theme: theme, existing: nil)
+        }
+        .ainkradModal(isPresented: Binding(
+            get: { editing != nil },
+            set: { isPresented in if !isPresented { editing = nil } }
+        )) {
+            if let editing {
+                ConnectionEditorView(store: store, theme: theme, existing: editing)
+            }
+        }
+        .ainkradModal(isPresented: $showingKeys) {
+            KeyVaultView(store: store, theme: theme)
+        }
     }
 
     // MARK: Header (wordmark + HUD actions)

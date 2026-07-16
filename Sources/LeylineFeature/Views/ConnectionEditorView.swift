@@ -7,6 +7,7 @@ struct ConnectionEditorView: View {
     let existing: LeylineConnection?
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.ainkradTypography) private var typo
     @State private var label = ""
     @State private var host = ""
     @State private var port = "22"
@@ -16,35 +17,75 @@ struct ConnectionEditorView: View {
     @State private var keyID: UUID?
 
     private var t: HostThemeTokens { theme.tokens }
-    private var selectedKeyLabel: String { store.keys.first(where: { $0.id == keyID })?.label ?? "None" }
+
+    /// `AinkradSelect` needs a `Hashable` selection with no associated
+    /// optionality — wraps `keyID: UUID?` (`.none` is a real, selectable
+    /// option: "no key").
+    private enum KeyChoice: Hashable {
+        case none
+        case key(UUID)
+    }
+    private var keyChoiceBinding: Binding<KeyChoice> {
+        Binding(
+            get: { keyID.map(KeyChoice.key) ?? .none },
+            set: { newValue in
+                switch newValue {
+                case .none: keyID = nil
+                case .key(let id): keyID = id
+                }
+            }
+        )
+    }
+    private var keyChoices: [KeyChoice] { [.none] + store.keys.map { .key($0.id) } }
+    private func keyChoiceLabel(_ choice: KeyChoice) -> String {
+        switch choice {
+        case .none: return "None"
+        case .key(let id): return store.keys.first(where: { $0.id == id })?.label ?? "Unknown"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HudTitle(text: existing == nil ? "New Connection" : "Edit Connection", tokens: t)
+            Text(existing == nil ? "New Connection" : "Edit Connection")
+                .font(AinkradFontResolver.font(.headline, weight: .semibold, typography: typo))
+                .foregroundStyle(t.foreground)
 
-            HudField(label: "Label", placeholder: "Prod Web", text: $label, tokens: t)
-            HStack(alignment: .bottom, spacing: 10) {
-                HudField(label: "Host", placeholder: "example.com", text: $host, tokens: t)
-                HudField(label: "Port", placeholder: "22", text: $port, tokens: t).frame(width: 84)
+            AinkradFormRow(title: "Label") {
+                AinkradTextField(text: $label, placeholder: "Prod Web")
             }
-            HudField(label: "Username", placeholder: "deploy", text: $username, tokens: t)
+            HStack(alignment: .bottom, spacing: 10) {
+                AinkradFormRow(title: "Host") {
+                    AinkradTextField(text: $host, placeholder: "example.com")
+                }
+                AinkradFormRow(title: "Port") {
+                    AinkradTextField(text: $port, placeholder: "22")
+                }.frame(width: 110)
+            }
+            AinkradFormRow(title: "Username") {
+                AinkradTextField(text: $username, placeholder: "deploy")
+            }
 
-            labeled("Auth") {
-                HudSegmented(options: [(LeylineConnection.AuthMode.password, "Password"),
-                                       (.key, "Key")], selection: $authMode, tokens: t)
+            AinkradFormRow(title: "Auth") {
+                AinkradSegmentedPicker(items: [LeylineConnection.AuthMode.password, .key], selection: $authMode) {
+                    $0 == .password ? "Password" : "Key"
+                }
             }
 
             if authMode == .password {
-                HudField(label: "Password", text: $password, secure: true, tokens: t)
+                AinkradFormRow(title: "Password") {
+                    AinkradSecureField(text: $password, placeholder: "")
+                }
             } else {
-                labeled("Key") { keyMenu }
+                AinkradFormRow(title: "Key") {
+                    AinkradSelect(items: keyChoices, selection: keyChoiceBinding, label: keyChoiceLabel)
+                }
             }
 
             HStack(spacing: 10) {
                 Spacer()
-                HudButton(title: "Cancel", tokens: t) { dismiss() }.keyboardShortcut(.cancelAction)
-                HudButton(title: "Save", systemImage: "checkmark", kind: .primary,
-                          disabled: host.isEmpty, tokens: t) { save() }
+                AinkradButton(title: "Cancel", style: .ghost) { dismiss() }.keyboardShortcut(.cancelAction)
+                AinkradButton(title: "Save", style: .primary, icon: "checkmark") { save() }
+                    .disabled(host.isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
             .padding(.top, 4)
@@ -54,35 +95,6 @@ struct ConnectionEditorView: View {
         .background(LeylineHUD.sheetBackground(t))
         .foregroundStyle(t.foreground)
         .onAppear(perform: load)
-    }
-
-    @ViewBuilder private func labeled<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .semibold, design: .monospaced)).kerning(1.5)
-                .foregroundStyle(t.foreground.opacity(0.5))
-            content()
-        }
-    }
-
-    private var keyMenu: some View {
-        Menu {
-            Button("None") { keyID = nil }
-            ForEach(store.keys) { k in Button(k.label) { keyID = k.id } }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "key.fill").font(.system(size: 10)).foregroundStyle(t.accentTertiary)
-                Text(selectedKeyLabel).font(.system(size: 13)).foregroundStyle(t.foreground)
-                Spacer()
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9)).foregroundStyle(t.foreground.opacity(0.5))
-            }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(t.surface.opacity(0.6)))
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(t.accentPrimary.opacity(0.18), lineWidth: 1))
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
     }
 
     private func load() {

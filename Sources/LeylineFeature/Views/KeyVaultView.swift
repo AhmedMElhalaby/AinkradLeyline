@@ -4,8 +4,9 @@ import AinkradAppKit
 struct KeyVaultView: View {
     @Bindable var store: LeylineStore
     let theme: HostTheme
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.ainkradTypography) private var typo
     @State private var showingPaste = false
     @State private var pasteLabel = ""
     @State private var pasteBody = ""
@@ -17,10 +18,12 @@ struct KeyVaultView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                HudTitle(text: "SSH Keys", tokens: t)
+                Text("SSH Keys")
+                    .font(AinkradFontResolver.font(.headline, weight: .semibold, typography: typo))
+                    .foregroundStyle(t.foreground)
                 Spacer()
-                HudButton(title: "Import File", systemImage: "folder", tokens: t) { presentImportPanel() }
-                HudButton(title: "Paste", systemImage: "doc.on.clipboard", tokens: t) { showingPaste = true }
+                AinkradButton(title: "Import File", style: .secondary, icon: "folder") { presentImportPanel() }
+                AinkradButton(title: "Paste", style: .secondary, icon: "doc.on.clipboard") { showingPaste = true }
             }
             LeylineHUD.glowRule(t)
 
@@ -37,82 +40,72 @@ struct KeyVaultView: View {
 
             HStack {
                 Spacer()
-                HudButton(title: "Done", kind: .primary, tokens: t) { dismiss() }.keyboardShortcut(.defaultAction)
+                AinkradButton(title: "Done", style: .primary) { onClose() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
         .frame(width: 440, height: 380)
         .background(LeylineHUD.sheetBackground(t))
         .foregroundStyle(t.foreground)
-        .sheet(isPresented: $showingPaste) { pasteSheet }
+        .ainkradModal(isPresented: $showingPaste) { pasteModalContent }
     }
 
     @ViewBuilder private func keyRow(_ key: LeylineKey) -> some View {
         let isHover = hovered == key.id
-        HStack(spacing: 10) {
-            Image(systemName: "key.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(t.accentTertiary)
-                .frame(width: 24, height: 24)
-                .background(RoundedRectangle(cornerRadius: 6).fill(t.accentTertiary.opacity(0.14)))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(t.accentTertiary.opacity(0.3), lineWidth: 0.5))
-            Text(key.label).font(.system(size: 13, weight: .medium)).foregroundStyle(t.foreground)
-            if key.hasPassphrase {
-                Image(systemName: "lock.fill").font(.system(size: 9)).foregroundStyle(t.foreground.opacity(0.5))
+        AinkradListRow(
+            isSelected: isHover,
+            leading: {
+                Image(systemName: "key.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(t.accentTertiary)
+                    .frame(width: 24, height: 24)
+                    .background(ChamferShape(cut: AinkradRadius.sm).fill(t.accentTertiary.opacity(0.14)))
+                    .overlay(ChamferShape(cut: AinkradRadius.sm).strokeBorder(t.accentTertiary.opacity(0.3), lineWidth: 0.5))
+            },
+            title: key.label,
+            subtitle: key.hasPassphrase ? "Passphrase-protected" : nil,
+            trailing: {
+                AinkradIconButton(systemName: "trash") { store.removeKey(key) }
+                    .help("Delete key")
+                    .opacity(isHover ? 1 : 0)
+                    .allowsHitTesting(isHover)
             }
-            Spacer()
-            HudIconButton(systemName: "trash", help: "Delete key", tokens: t) { store.removeKey(key) }
-                .opacity(isHover ? 1 : 0)
-                .allowsHitTesting(isHover)
-        }
-        .padding(.horizontal, 9).padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: LeylineHUD.rowRadius, style: .continuous)
-            .fill(isHover ? t.surfaceElevated.opacity(0.5) : .clear))
-        .onHover { h in withAnimation(.easeOut(duration: 0.14)) { hovered = h ? key.id : nil } }
+        )
+        .onHover { h in hovered = h ? key.id : nil }
     }
 
     private var emptyKeys: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "key")
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(t.accentTertiary.opacity(0.6))
-                .shadow(color: t.accentTertiary.opacity(0.35), radius: 7)
-            Text("No keys imported").font(.system(size: 13, weight: .medium)).foregroundStyle(t.foreground.opacity(0.8))
-            Text("Import a private key by file or paste").font(.system(size: 11)).foregroundStyle(t.foreground.opacity(0.5))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        AinkradEmptyState(
+            icon: "key",
+            title: "No keys imported",
+            message: "Import a private key by file or paste"
+        )
     }
 
-    private var pasteSheet: some View {
+    private var pasteModalContent: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HudTitle(text: "Paste Private Key", tokens: t)
-            HudField(label: "Label", placeholder: "id_ed25519", text: $pasteLabel, tokens: t)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("PRIVATE KEY")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced)).kerning(1.5)
-                    .foregroundStyle(t.foreground.opacity(0.5))
-                TextEditor(text: $pasteBody)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(t.foreground)
-                    .scrollContentBackground(.hidden)
-                    .frame(height: 130)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(t.surface.opacity(0.6)))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(t.accentPrimary.opacity(0.18), lineWidth: 1))
+            Text("Paste Private Key")
+                .font(AinkradFontResolver.font(.headline, weight: .semibold, typography: typo))
+                .foregroundStyle(t.foreground)
+            AinkradFormRow(title: "Label") {
+                AinkradTextField(text: $pasteLabel, placeholder: "id_ed25519")
             }
-            HudField(label: "Passphrase (optional)", text: $pastePassphrase, secure: true, tokens: t)
+            AinkradFormRow(title: "Private Key") {
+                AinkradTextArea(text: $pasteBody, placeholder: "-----BEGIN OPENSSH PRIVATE KEY-----")
+            }
+            AinkradFormRow(title: "Passphrase (optional)") {
+                AinkradSecureField(text: $pastePassphrase, placeholder: "")
+            }
             HStack(spacing: 10) {
                 Spacer()
-                HudButton(title: "Cancel", tokens: t) { showingPaste = false }.keyboardShortcut(.cancelAction)
-                HudButton(title: "Import", systemImage: "checkmark", kind: .primary,
-                          disabled: pasteBody.isEmpty, tokens: t) { importPasted() }
+                AinkradButton(title: "Cancel", style: .ghost) { showingPaste = false }.keyboardShortcut(.cancelAction)
+                AinkradButton(title: "Import", style: .primary, icon: "checkmark") { importPasted() }
+                    .disabled(pasteBody.isEmpty)
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)
-        .frame(width: 440)
-        .background(LeylineHUD.sheetBackground(t))
+        .frame(width: 400)
         .foregroundStyle(t.foreground)
     }
 

@@ -12,7 +12,6 @@ struct LeylineRootView: View {
     @State private var showingKeys = false
     @State private var copied: UUID?
     @State private var hovered: UUID?
-    @FocusState private var searchFocused: Bool
 
     private var t: HostThemeTokens { theme.tokens }
     private var filtered: [LeylineConnection] { ConnectionFilter.matching(query, in: store.connections) }
@@ -20,7 +19,7 @@ struct LeylineRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            searchField
+            AinkradSearchField(text: $query, placeholder: "Search connections")
                 .padding(.horizontal, 14)
                 .padding(.bottom, 10)
             LeylineHUD.glowRule(t).padding(.horizontal, 14)
@@ -44,35 +43,12 @@ struct LeylineRootView: View {
                 .font(.system(size: 12, weight: .bold, design: .monospaced)).kerning(3)
                 .foregroundStyle(t.foreground.opacity(0.85))
             Spacer()
-            HudIconButton(systemName: "key.fill", help: "SSH Keys", tokens: t) { showingKeys = true }
-            HudIconButton(systemName: "plus", help: "New Connection", tokens: t) { showingNew = true }
+            AinkradIconButton(systemName: "key.fill") { showingKeys = true }.help("SSH Keys")
+            AinkradIconButton(systemName: "plus") { showingNew = true }.help("New Connection")
         }
         .padding(.horizontal, 14)
         .padding(.top, 14)
         .padding(.bottom, 12)
-    }
-
-    // MARK: Search
-
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(t.accentSecondary.opacity(0.85))
-                .shadow(color: t.accentSecondary.opacity(searchFocused ? 0.5 : 0.2), radius: 4)
-            TextField("Search connections", text: $query)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .foregroundStyle(t.foreground)
-                .focused($searchFocused)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(t.surface.opacity(0.55)))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .strokeBorder(t.accentPrimary.opacity(searchFocused ? 0.55 : 0.18), lineWidth: 1))
-        .shadow(color: t.accentPrimary.opacity(searchFocused ? 0.2 : 0), radius: 8)
-        .animation(.easeOut(duration: 0.14), value: searchFocused)
     }
 
     // MARK: Content
@@ -92,22 +68,11 @@ struct LeylineRootView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: store.connections.isEmpty ? "point.3.connected.trianglepath.dotted" : "magnifyingglass")
-                .font(.system(size: 30, weight: .light))
-                .foregroundStyle(t.accentSecondary.opacity(0.7))
-                .shadow(color: t.accentSecondary.opacity(0.4), radius: 8)
-            Text(store.connections.isEmpty ? "No connections yet" : "No matches")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(t.foreground.opacity(0.8))
-            if store.connections.isEmpty {
-                Text("Add a host with  +")
-                    .font(.system(size: 11))
-                    .foregroundStyle(t.foreground.opacity(0.5))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.bottom, 24)
+        AinkradEmptyState(
+            icon: store.connections.isEmpty ? "point.3.connected.trianglepath.dotted" : "magnifyingglass",
+            title: store.connections.isEmpty ? "No connections yet" : "No matches",
+            message: store.connections.isEmpty ? "Add a host with  +" : "Try a different search"
+        )
     }
 
     // MARK: Row
@@ -115,49 +80,34 @@ struct LeylineRootView: View {
     @ViewBuilder private func row(_ conn: LeylineConnection) -> some View {
         let isHover = hovered == conn.id
         let authColor = conn.authMode == .key ? t.accentTertiary : t.accentSecondary
-        HStack(spacing: 10) {
-            RoundedRectangle(cornerRadius: 2)                       // glowing selection spine
-                .fill(t.accentSecondary)
-                .frame(width: 3, height: 26)
-                .shadow(color: t.accentSecondary.opacity(0.8), radius: 4)
-                .opacity(isHover ? 1 : 0)
+        AinkradListRow(
+            isSelected: isHover,
+            leading: {
+                Image(systemName: conn.authMode == .key ? "key.fill" : "lock.fill")   // auth badge
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(authColor)
+                    .frame(width: 24, height: 24)
+                    .background(ChamferShape(cut: AinkradRadius.sm).fill(authColor.opacity(0.14)))
+                    .overlay(ChamferShape(cut: AinkradRadius.sm).strokeBorder(authColor.opacity(0.3), lineWidth: 0.5))
+            },
+            title: conn.label.isEmpty ? conn.host : conn.label,
+            subtitle: SSHCommand.string(for: conn),
+            trailing: {
+                HStack(spacing: 6) {
+                    HStack(spacing: 6) {                                    // hover-revealed secondary actions
+                        AinkradIconButton(systemName: copied == conn.id ? "checkmark" : "doc.on.doc") { copyCommand(conn) }
+                            .help("Copy ssh command")
+                        AinkradIconButton(systemName: "pencil") { editing = conn }.help("Edit")
+                        AinkradIconButton(systemName: "trash") { store.removeConnection(conn) }.help("Delete")
+                    }
+                    .opacity(isHover ? 1 : 0)
+                    .allowsHitTesting(isHover)
 
-            Image(systemName: conn.authMode == .key ? "key.fill" : "lock.fill")   // auth badge
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(authColor)
-                .frame(width: 24, height: 24)
-                .background(RoundedRectangle(cornerRadius: 6).fill(authColor.opacity(0.14)))
-                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(authColor.opacity(0.3), lineWidth: 0.5))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(conn.label.isEmpty ? conn.host : conn.label)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(t.foreground)
-                Text(SSHCommand.string(for: conn))
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(t.foreground.opacity(0.5))
-                    .lineLimit(1)
+                    AinkradButton(title: "Connect", style: .primary, icon: "bolt.fill") { connect(conn) }   // always-visible primary action
+                }
             }
-
-            Spacer(minLength: 8)
-
-            HStack(spacing: 6) {                                    // hover-revealed secondary actions
-                HudIconButton(systemName: copied == conn.id ? "checkmark" : "doc.on.doc",
-                              help: "Copy ssh command", tokens: t) { copyCommand(conn) }
-                HudIconButton(systemName: "pencil", help: "Edit", tokens: t) { editing = conn }
-                HudIconButton(systemName: "trash", help: "Delete", tokens: t) { store.removeConnection(conn) }
-            }
-            .opacity(isHover ? 1 : 0)
-            .allowsHitTesting(isHover)
-
-            ConnectChip(tokens: t) { connect(conn) }               // always-visible primary action
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: LeylineHUD.rowRadius, style: .continuous)
-            .fill(isHover ? t.surfaceElevated.opacity(0.5) : .clear))
-        .contentShape(Rectangle())
-        .onHover { h in withAnimation(.easeOut(duration: 0.14)) { hovered = h ? conn.id : nil } }
+        )
+        .onHover { h in hovered = h ? conn.id : nil }
     }
 
     // MARK: Actions

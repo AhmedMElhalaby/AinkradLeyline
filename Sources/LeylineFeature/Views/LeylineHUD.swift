@@ -66,43 +66,6 @@ struct HudIconButton: View {
     }
 }
 
-/// The primary Connect action — an accent-filled bolt chip with glassy top
-/// gloss, gradient rim, and a neon glow that intensifies on hover.
-struct ConnectChip: View {
-    let tokens: HostThemeTokens
-    let action: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: "bolt.fill").font(.system(size: 10, weight: .bold))
-                Text("Connect").font(.system(size: 11, weight: .semibold))
-            }
-            .foregroundStyle(Color.white)
-            .padding(.horizontal, 11).padding(.vertical, 6)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(LinearGradient(colors: [tokens.accentPrimary.opacity(0.92), tokens.accentPrimary],
-                                         startPoint: .top, endPoint: .bottom))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(LinearGradient(colors: [.white.opacity(0.22), .clear],
-                                                 startPoint: .top, endPoint: .center))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(tokens.accentSecondary.opacity(hovering ? 0.85 : 0.5), lineWidth: 1)
-                    )
-            )
-            .shadow(color: tokens.accentPrimary.opacity(hovering ? 0.55 : 0.35), radius: hovering ? 12 : 8)
-        }
-        .buttonStyle(.plain)
-        .help("Connect (opens Terminal)")
-        .onHover { h in withAnimation(.easeOut(duration: 0.14)) { hovering = h } }
-    }
-}
-
 enum HudButtonKind { case primary, secondary, destructive }
 
 /// Text HUD button mirroring Git Mage's `hudButtonSurface` (gradient fill for

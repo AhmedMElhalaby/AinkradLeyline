@@ -4,8 +4,8 @@ import AinkradAppKit
 struct KeyVaultView: View {
     @Bindable var store: LeylineStore
     let theme: HostTheme
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.ainkradTypography) private var typo
     @State private var showingPaste = false
     @State private var pasteLabel = ""
@@ -40,7 +40,7 @@ struct KeyVaultView: View {
 
             HStack {
                 Spacer()
-                AinkradButton(title: "Done", style: .primary) { dismiss() }.keyboardShortcut(.defaultAction)
+                AinkradButton(title: "Done", style: .primary) { onClose() }.keyboardShortcut(.defaultAction)
             }
         }
         .padding(18)

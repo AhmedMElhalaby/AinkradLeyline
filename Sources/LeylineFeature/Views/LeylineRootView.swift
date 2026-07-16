@@ -31,18 +31,18 @@ struct LeylineRootView: View {
         // driven by the item's presence; `editing` itself stays available to
         // the hosted content for the duration the modal is up.
         .ainkradModal(isPresented: $showingNew) {
-            ConnectionEditorView(store: store, theme: theme, existing: nil)
+            ConnectionEditorView(store: store, theme: theme, existing: nil, onClose: { showingNew = false })
         }
         .ainkradModal(isPresented: Binding(
             get: { editing != nil },
             set: { isPresented in if !isPresented { editing = nil } }
         )) {
             if let editing {
-                ConnectionEditorView(store: store, theme: theme, existing: editing)
+                ConnectionEditorView(store: store, theme: theme, existing: editing, onClose: { self.editing = nil })
             }
         }
         .ainkradModal(isPresented: $showingKeys) {
-            KeyVaultView(store: store, theme: theme)
+            KeyVaultView(store: store, theme: theme, onClose: { showingKeys = false })
         }
     }
 

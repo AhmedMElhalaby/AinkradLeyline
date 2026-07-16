@@ -5,8 +5,8 @@ struct ConnectionEditorView: View {
     @Bindable var store: LeylineStore
     let theme: HostTheme
     let existing: LeylineConnection?
+    let onClose: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.ainkradTypography) private var typo
     @State private var label = ""
     @State private var host = ""
@@ -83,7 +83,7 @@ struct ConnectionEditorView: View {
 
             HStack(spacing: 10) {
                 Spacer()
-                AinkradButton(title: "Cancel", style: .ghost) { dismiss() }.keyboardShortcut(.cancelAction)
+                AinkradButton(title: "Cancel", style: .ghost) { onClose() }.keyboardShortcut(.cancelAction)
                 AinkradButton(title: "Save", style: .primary, icon: "checkmark") { save() }
                     .disabled(host.isEmpty)
                     .keyboardShortcut(.defaultAction)
@@ -116,6 +116,6 @@ struct ConnectionEditorView: View {
                                 authMode: authMode, keyID: authMode == .key ? keyID : nil,
                                 password: authMode == .password ? password : nil)
         }
-        dismiss()
+        onClose()
     }
 }

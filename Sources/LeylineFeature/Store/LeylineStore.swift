@@ -47,6 +47,12 @@ public final class LeylineStore {
     public func removeKey(_ key: LeylineKey) {
         secrets.setSecret(nil, forKey: key.privateKeySecretID)
         secrets.setSecret(nil, forKey: key.passphraseSecretID)
+        // Deleting a key from the vault must also delete the plaintext copy
+        // `SSHKeyMaterializer` wrote to Application Support for `ssh` to read.
+        // Previously "delete key" cleared the Keychain entry and left the
+        // actual private key on disk indefinitely — the vault showed no key
+        // while the key was still there.
+        SSHKeyMaterializer.purge(keyID: key.id)
         keys.removeAll { $0.id == key.id }
         for i in connections.indices where connections[i].keyID == key.id {
             connections[i].keyID = nil

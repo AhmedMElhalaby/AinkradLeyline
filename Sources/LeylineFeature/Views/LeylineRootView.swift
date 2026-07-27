@@ -12,6 +12,10 @@ struct LeylineRootView: View {
     @State private var showingKeys = false
     @State private var copied: UUID?
     @State private var hovered: UUID?
+    /// Non-nil when the last connect attempt failed. Surfaces what used to be
+    /// discarded: `apps.open` returned Void, so a missing or disabled Terminal
+    /// looked exactly like a successful launch.
+    @State private var launchError: String?
 
     private var t: HostThemeTokens { theme.tokens }
     private var filtered: [LeylineConnection] { ConnectionFilter.matching(query, in: store.connections) }
@@ -23,6 +27,16 @@ struct LeylineRootView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 10)
             LeylineHUD.glowRule(t).padding(.horizontal, 14)
+            if let launchError {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+                    Text(launchError).font(.system(size: 11)).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    AinkradIconButton(systemName: "xmark", size: 18) { self.launchError = nil }
+                }
+                .foregroundStyle(t.accentTertiary)
+                .padding(.horizontal, 14).padding(.top, 8)
+            }
             content
         }
         .background(Color.clear)                       // let the host HUD panel blur show through
@@ -140,9 +154,36 @@ struct LeylineRootView: View {
            let material = store.privateKey(for: key) {
             identityFile = try? SSHKeyMaterializer.materialize(keyID: keyID, privateKey: material)
         }
+        // `SSHLaunchPayload` is now the SHARED SDK type — one definition,
+        // versioned, and validated on both sides. Leyline previously had its
+        // own `Encodable` struct and Terminal its own `Decodable` mirror, kept
+        // in sync by hand across two repos.
         let payload = SSHLaunchPayload(
             host: conn.host, port: conn.port, username: conn.username, identityFile: identityFile
-        ).json
-        launcher.open(appID: "terminal", payload: payload)
+        )
+        // Validate before sending. Every field lands in an `ssh` argv, and
+        // `ssh`'s option surface (`-o ProxyCommand=…`) runs shell commands — so
+        // a hostile hostname or username is code execution. Refusing here means
+        // the malformed connection never leaves this process.
+        guard let safe = try? payload.validated() else {
+            launchError = "This connection has an unsafe host, username or key path."
+            return
+        }
+        // Report the outcome instead of discarding it. `open(appID:payload:)`
+        // returns Void, so this button looked identical whether Terminal opened
+        // or was not installed at all.
+        let outcome = (launcher as? PluginAppLauncherResult)?
+            .openReportingOutcome(appID: "terminal", payload: safe.json)
+            ?? { launcher.open(appID: "terminal", payload: safe.json); return .opened }()
+        switch outcome {
+        case .opened:            launchError = nil
+        case .unknownApp:        launchError = "Terminal isn't installed — install it from the App Store."
+        case .disabled:          launchError = "Terminal is disabled — enable it in the App Store."
+        case .refused(let why):  launchError = "Couldn't open Terminal: \(why)"
+        // `PluginLaunchOutcome` lives in a resilient module, so the compiler
+        // requires a default: a newer SDK may add a case this build has never
+        // seen. Treat anything unknown as a failure rather than as success.
+        @unknown default:        launchError = "Couldn't open Terminal."
+        }
     }
 }

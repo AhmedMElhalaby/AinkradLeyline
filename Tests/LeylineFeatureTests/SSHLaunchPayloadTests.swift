@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 @testable import LeylineFeature
+import AinkradAppKit
 
 @Suite("SSHLaunchPayload")
 struct SSHLaunchPayloadTests {

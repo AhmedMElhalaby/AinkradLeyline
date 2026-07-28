@@ -148,12 +148,11 @@ struct LeylineRootView: View {
     }
 
     private func connect(_ conn: LeylineConnection) {
-        var identityFile: String?
-        if conn.authMode == .key, let keyID = conn.keyID,
-           let key = store.keys.first(where: { $0.id == keyID }),
-           let material = store.privateKey(for: key) {
-            identityFile = try? SSHKeyMaterializer.materialize(keyID: keyID, privateKey: material)
-        }
+        // One implementation of "make this connection's key readable by ssh",
+        // shared with the agent-initiated connect in `LeylineMCPOperations`.
+        // While it lived here, the tool path had to either duplicate it or go
+        // without a key — it went without, and users got Permission denied.
+        let identityFile = SSHIdentityResolver.resolve(conn, store: store).path
         // `SSHLaunchPayload` is now the SHARED SDK type — one definition,
         // versioned, and validated on both sides. Leyline previously had its
         // own `Encodable` struct and Terminal its own `Decodable` mirror, kept

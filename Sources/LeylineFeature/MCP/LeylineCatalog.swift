@@ -39,6 +39,20 @@ import AinkradAppKit
 /// The derived *secret ids* are not secrets, but they are not published either:
 /// they are Keychain lookup keys and naming them in a transcript is free
 /// reconnaissance with no benefit to the model.
+///
+/// ## The one closure that touches a secret — and why it is still safe
+///
+/// `identity` reads the private key out of the vault and writes it to a 0600
+/// file so `ssh` can use it. That is what the Connect button has always done,
+/// and it is what makes an agent-initiated connect actually authenticate
+/// instead of failing with `Permission denied`.
+///
+/// What crosses the boundary is unchanged in kind: a value type carrying no
+/// key material. The new hazard is the *path*, which names a plaintext copy of
+/// the key — so it is wrapped in `MaterializedIdentity` rather than returned as
+/// a `String`, and printing that wrapper yields `<materialized identity>`. The
+/// invariant "nothing derived from a secret reaches tool output" therefore
+/// survives an author who forgets it.
 @MainActor
 struct LeylineCatalog {
     /// Saved connections, metadata only.
@@ -49,13 +63,23 @@ struct LeylineCatalog {
     /// happened. Injected rather than reached through `HostServices` so the
     /// tests can drive every `PluginLaunchOutcome` case without a live host.
     let launch: @MainActor (SSHLaunchPayload) -> PluginLaunchOutcome
+    /// Makes one connection's key readable by `ssh` and answers with the *path*
+    /// — never the material. This is the one capability here that touches the
+    /// Keychain, and it is deliberately shaped so what comes back cannot be a
+    /// secret: `SSHIdentityResolution` carries a `MaterializedIdentity`, whose
+    /// `description` is a redaction, so the path cannot reach tool output by
+    /// interpolation. `LeylineMCPOperations` passes it straight into an
+    /// `SSHLaunchPayload` and never prints it.
+    let identity: @MainActor (LeylineConnection) -> SSHIdentityResolution
 
     init(connections: @escaping @MainActor () -> [LeylineConnection],
          keys: @escaping @MainActor () -> [LeylineKey],
-         launch: @escaping @MainActor (SSHLaunchPayload) -> PluginLaunchOutcome) {
+         launch: @escaping @MainActor (SSHLaunchPayload) -> PluginLaunchOutcome,
+         identity: @escaping @MainActor (LeylineConnection) -> SSHIdentityResolution) {
         self.connections = connections
         self.keys = keys
         self.launch = launch
+        self.identity = identity
     }
 
     /// Builds the catalog the plugin actually runs with: reads projected off
@@ -81,5 +105,6 @@ struct LeylineCatalog {
             launcher.open(appID: "terminal", payload: payload.json)
             return .opened
         }
+        self.identity = { conn in SSHIdentityResolver.resolve(conn, store: store) }
     }
 }

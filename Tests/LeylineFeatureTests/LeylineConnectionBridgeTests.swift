@@ -176,13 +176,55 @@ struct LeylineConnectionBridgeTests {
         #expect(reply.text.contains("no key selected") || reply.text.contains("no longer in Leyline's vault"))
     }
 
-    @Test("ids match case-insensitively, but never by label or host")
-    func matchesByIDOnly() {
+    /// Revisits the earlier "id only" rule. Labels ARE addressable now — the
+    /// host's approval card prints this identifier verbatim, and a UUID there
+    /// defeats the gate — but the ambiguity that motivated the old rule is
+    /// answered by erroring rather than by refusing labels outright. Hosts are
+    /// still not addressable.
+    @Test("ids and unique labels match case-insensitively; hosts never do")
+    func matchesByIDOrUniqueLabel() {
         let fixture = makeFixture()
         #expect(!resolve(fixture.bridge, fixture.keyConn.id.uuidString.lowercased()).isError)
-        for identifier in ["Prod web", "web.example.com"] {
-            #expect(resolve(fixture.bridge, identifier).isError)
-        }
+        #expect(!resolve(fixture.bridge, "Prod web").isError)
+        #expect(!resolve(fixture.bridge, "PROD WEB").isError)
+        // A hostname is not a user-chosen name, and two connections to one host
+        // with different usernames are normal.
+        #expect(resolve(fixture.bridge, "web.example.com").isError)
+    }
+
+    @Test("an exact id wins even when another connection is LABELLED with that id")
+    func idBeatsLabel() throws {
+        let fixture = makeFixture()
+        // A label that mimics another connection's id: user-typed text must
+        // never outrank Leyline's own unforgeable name for a connection.
+        _ = fixture.store.addConnection(label: fixture.keyConn.id.uuidString,
+                                        host: "decoy.example.com", port: 22, username: "root",
+                                        authMode: .key, keyID: fixture.key.id, password: nil)
+        let reply = resolve(fixture.bridge, fixture.keyConn.id.uuidString)
+        #expect(!reply.isError)
+        let info = try JSONDecoder().decode(SSHConnectionInfo.self, from: Data(reply.text.utf8))
+        #expect(info.host == "web.example.com")
+    }
+
+    @Test("an ambiguous label is refused, naming the ambiguity, and resolves nothing")
+    func ambiguousLabelRefused() {
+        let fixture = makeFixture()
+        _ = fixture.store.addConnection(label: "Prod web", host: "web2.example.com", port: 22,
+                                        username: "deploy", authMode: .key, keyID: fixture.key.id,
+                                        password: nil)
+        let reply = resolve(fixture.bridge, "prod web")
+        #expect(reply.isError)
+        #expect(reply.text.contains("2 saved connections share the label \"Prod web\""))
+        #expect(reply.text.contains("pass the id"))
+        // Refused, not silently narrowed to one of them.
+        #expect(!reply.text.contains("web.example.com"))
+    }
+
+    @Test("an identifier matching no id and no label is a clear error")
+    func unknownIdentifier() {
+        let reply = resolve(makeFixture().bridge, "no-such-machine")
+        #expect(reply.isError)
+        #expect(reply.text.contains("no saved connection has that id or label"))
     }
 
     /// The bridge's identity is a namespaced action id, in the style of

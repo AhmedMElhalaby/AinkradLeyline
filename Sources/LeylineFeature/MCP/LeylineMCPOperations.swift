@@ -23,15 +23,17 @@ import AinkradAppKit
 /// - Nothing that takes credential material as an ARGUMENT (`importKey`,
 ///   `setPassword`). Tool-call arguments land in the transcript exactly as tool
 ///   results do, so an "import this key" tool would leak by a different door.
-/// - `connect` does NOT materialize a private key. `LeylineRootView.connect`
-///   does (it calls `store.privateKey` and writes a 0600 file for `ssh`), and
-///   that is right for a click the user made. It is not right for a tool call:
-///   materializing means an agent decision causes plaintext key material to be
-///   written to disk, and the identity path itself is derived from a secret.
-///   An agent-initiated connect therefore sends `identityFile: nil` and leans
-///   on the user's own `ssh-agent` / `~/.ssh/config`, which is exactly what a
-///   bare `ssh user@host` in a terminal would do. `describeKeyAuth` tells the
-///   model when that applies so it does not report a silent difference.
+/// - `connect` DOES materialize a private key, through `catalog.identity` —
+///   the same `SSHIdentityResolver` the Connect button uses. It previously sent
+///   `identityFile: nil` on the theory that an agent decision must not cause a
+///   key file to be written, and that was wrong: it conflated the model *seeing*
+///   key material (dangerous — transcripts persist) with the app *writing* a key
+///   file because the model named a saved connection id (not dangerous — the
+///   human approves, and neither the key nor its path comes back). The result
+///   was a tool that opened Terminal and then failed with `Permission denied`
+///   for every host whose key lives only in Leyline's vault. What stays true is
+///   the part that mattered: no key material, passphrase, password **or
+///   materialized path** appears in any result, error or argument echo.
 @MainActor
 struct LeylineMCPOperations {
     let catalog: LeylineCatalog
@@ -151,9 +153,31 @@ struct LeylineMCPOperations {
                             + "Call list_connections to get the id of the host you mean.")
         }
 
-        // `identityFile` is deliberately nil — see this type's doc comment.
+        // Materialize the stored key exactly as the Connect button does. The
+        // failure modes are reported as failures rather than silently degraded
+        // to "try ssh-agent and hope": a connect that opens Terminal and then
+        // says Permission denied is the bug this replaces.
+        let resolution = catalog.identity(conn)
+        switch resolution {
+        case .identity, .passwordAuth:
+            break
+        case .noKeySelected:
+            return .failure("Connection \"\(label(conn))\" uses key authentication but has no key "
+                            + "selected. Pick one in the Leyline app, then try again.")
+        case .keyUnavailable:
+            return .failure("Connection \"\(label(conn))\" uses key authentication but its key is "
+                            + "no longer in Leyline's vault. Re-import it in the Leyline app.")
+        case .materializationFailed:
+            // The underlying error names the file; it is deliberately not
+            // described here. See `MaterializedIdentity`.
+            return .failure("Couldn't connect to \(label(conn)): Leyline could not write a "
+                            + "protected copy of its key for ssh to read.")
+        }
+        // `resolution.path` is the ONLY read of the materialized path in this
+        // file, and it goes straight into the payload Terminal receives — a
+        // channel the model never sees.
         let payload = SSHLaunchPayload(host: conn.host, port: conn.port,
-                                       username: conn.username, identityFile: nil)
+                                       username: conn.username, identityFile: resolution.path)
         // Validate before launching. Every field lands in an `ssh` argv, and
         // `ssh`'s option surface (`-o ProxyCommand=…`) runs shell commands, so
         // a hostile hostname is code execution. The same guard the UI applies.
@@ -169,17 +193,15 @@ struct LeylineMCPOperations {
         case .opened:
             var text = "Opened a Terminal session to \(label(conn)) "
                 + "(\(conn.username.isEmpty ? "" : "\(conn.username)@")\(conn.host):\(conn.port))."
-            if conn.authMode == .key {
-                // Say this plainly rather than let it look like a bug. The UI's
-                // connect button passes `-i <materialized key>`; this one does
-                // not, so a key that exists ONLY in Leyline's vault will not be
-                // offered and `ssh` will fall through to the user's own agent.
-                text += " This connection uses key auth, but tool-initiated connects do not "
-                    + "materialize Leyline's stored key — ssh will use your ssh-agent or "
-                    + "~/.ssh/config. Use the Connect button in the Leyline app to use the "
-                    + "stored key."
+            // Say which credential is in play, without naming where it lives.
+            if resolution.path != nil {
+                text += " It authenticates with the SSH key stored in Leyline."
             } else {
-                text += " Terminal will prompt for the password."
+                // Password auth is fine here: a human is sitting at the Terminal
+                // window `ssh` is about to prompt in. (It is NOT fine for
+                // background execution — see `LeylineConnectionBridge`.)
+                text += " This connection uses password authentication, so Terminal will prompt "
+                    + "for the password."
             }
             return .success(text)
         case .unknownApp:

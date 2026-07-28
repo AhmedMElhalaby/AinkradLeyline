@@ -182,15 +182,31 @@ struct LeylineMCPCredentialLeakTests {
                            tool: "tools/list", arguments: [:])
         }
 
-        // Whatever was handed to Terminal is a payload the model never sees,
-        // but a materialized identity path IS derived from a private key, so
-        // assert the agent path never produces one. (The UI's Connect button
-        // legitimately does; see `LeylineMCPOperations`.)
+        // The payload handed to Terminal is a channel the model never sees, and
+        // it now legitimately carries a materialized identity path — but it must
+        // still carry no key MATERIAL.
         for opened in launcher.opened {
-            let payload = SSHLaunchPayload(json: opened.payload)
-            #expect(payload?.identityFile == nil,
-                    "connect must not materialize a private key: \(opened.payload ?? "nil")")
             expectNoSecret(in: opened.payload ?? "", tool: "launch payload", arguments: [:])
+        }
+
+        // …and the path itself must not reach the model. It names a plaintext
+        // copy of the private key, so a model that learns it can read the key
+        // with any file-reading tool it has. Collect the paths actually produced
+        // and assert no tool reply, error or tool description contains one.
+        let paths = Set(launcher.opened.compactMap { SSHLaunchPayload(json: $0.payload)?.identityFile })
+        #expect(!paths.isEmpty, "the key connection should have produced an identity path")
+        var surface: [String] = []
+        for (name, arguments) in calls { surface.append(await call(server, name, arguments).text) }
+        for tool in await listedTools(server) {
+            surface.append(String(decoding: (try? JSONSerialization.data(withJSONObject: tool)) ?? Data(),
+                                  as: UTF8.self))
+        }
+        for text in surface {
+            for path in paths {
+                #expect(!text.contains(path), "a materialized key path reached tool output: \(text)")
+            }
+            #expect(!text.contains("Application Support"))
+            #expect(!text.contains("Leyline/keys"))
         }
     }
 
@@ -206,6 +222,34 @@ struct LeylineMCPCredentialLeakTests {
                           "get_private_key", "add_connection", "update_connection",
                           "remove_connection", "remove_key"] {
             #expect(!names.contains(forbidden), "\(forbidden) must not be published")
+        }
+    }
+
+    /// **The security property of the host-side bridge.**
+    ///
+    /// `leyline.resolve_connection` answers with `identityPath` — a filesystem
+    /// path to a plaintext private key. It exists for the host's `SSHBackend`,
+    /// which only host code invokes through `AgentActionRegistryHub`. If it ever
+    /// became an MCP tool, a model could ask for that path and then read the key
+    /// with any file-reading tool it has. Pin both halves: it is not in the
+    /// published table, and the MCP sink has no operation that reaches it.
+    @Test("resolve_connection is host-only and is not published as an MCP tool")
+    func resolveConnectionIsNotAnMCPTool() async {
+        let fixture = makeFixture()
+        let (server, _) = makeServer(store: fixture.store, launcher: FakeLauncher())
+        let published = Set(await listedTools(server).compactMap { $0["name"] as? String })
+        #expect(published == ["list_connections", "list_keys", "connect"])
+        for forbidden in ["resolve_connection", "leyline.resolve_connection",
+                          "resolveConnection", "connection_info"] {
+            #expect(!published.contains(forbidden), "\(forbidden) must not be published")
+            #expect(!Set(LeylineMCPServer.tools.map(\.operation)).contains(forbidden))
+            // Even naming the operation directly at the sink must not reach it.
+            let operations = LeylineMCPOperations(
+                catalog: LeylineCatalog(store: fixture.store, launcher: FakeLauncher()))
+            let payload = #"{"operation":"\#(forbidden)","connection":"\#(fixture.keyConn.id.uuidString)"}"#
+            let reply = await operations.run(payload)
+            #expect(reply.isError)
+            #expect(reply.text.contains("unknown operation"))
         }
     }
 
@@ -313,9 +357,19 @@ struct LeylineMCPServerTests {
         #expect(payload?.host == "web.example.com")
         #expect(payload?.port == 2222)
         #expect(payload?.username == "deploy")
-        // A key-auth connect says plainly that the stored key is not used, so
-        // the difference from the UI button is never silent.
-        #expect(reply.text.contains("ssh-agent"))
+        // THE regression: an agent-initiated connect used to send
+        // `identityFile: nil`, so ssh never saw the stored key and the user got
+        // Permission denied. It now materializes exactly as the button does.
+        let identity = try! #require(payload?.identityFile)
+        #expect(identity.contains(fixture.key.id.uuidString))
+        #expect(SSHCommand.string(for: fixture.keyConn, identityFile: identity)
+            .contains("-i \(SSHCommand.shellQuote(identity))"))
+        // …and the file it points at is only readable by its owner.
+        let mode = (try! FileManager.default.attributesOfItem(atPath: identity))[.posixPermissions] as? Int
+        #expect(mode == 0o600)
+        // The result says which credential is in play, and never where it lives.
+        #expect(reply.text.contains("SSH key stored in Leyline"))
+        #expect(!reply.text.contains(identity))
     }
 
     @Test("connect on a password connection says a prompt is coming")

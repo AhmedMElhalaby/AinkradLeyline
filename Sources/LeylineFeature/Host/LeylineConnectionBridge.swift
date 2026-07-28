@@ -1,0 +1,115 @@
+import Foundation
+import AinkradAppKit
+
+/// Resolves a saved connection into everything the **host** needs to run a
+/// command on that machine headlessly — host, user, port and the path of a
+/// materialized private key.
+///
+/// ## This is host↔plugin plumbing, not a tool
+///
+/// The host has an `SSHBackend` in its `ExecutionRouter` that has been wired
+/// with `connection: nil` since it was written, because "Leyline/AinkradSSH has
+/// no host-side connection bridge". This is that bridge. Once it answers, the
+/// assistant can run a command on a remote host through the host's own gating —
+/// approvals, `CommandRisk`, streaming, timeouts — with no Terminal window.
+///
+/// **It is registered on `AgentActionProvider`, and it must never become an MCP
+/// tool.** The two surfaces look similar and are not: `MCPAppServer.addTool`
+/// publishes a name into the model's context, while `host.actions.register`
+/// hands a closure to `AgentActionRegistryHub`, which only host code can
+/// `invoke`. The distinction matters here more than anywhere else in Leyline,
+/// because this response contains `identityPath` — a filesystem path to a
+/// plaintext private key. A model that can read that path can read the key with
+/// any file-reading tool it has.
+///
+/// So: nothing in this file is referenced by `LeylineMCPServer.tools`, and
+/// `LeylineMCPOperations.run` has no case for it — an MCP call naming this
+/// operation falls through to "unknown operation". Both are pinned by tests.
+///
+/// ## Password-only connections cannot work here, and the error says so
+///
+/// The host's `SSHArgsBuilder` bakes in `BatchMode=yes`, which disables every
+/// interactive prompt — that is what makes a headless run unable to hang
+/// forever waiting for a password nobody will type. The consequence is that a
+/// password-only connection can never authenticate in background execution.
+/// Returning it anyway would produce a confusing `Permission denied` several
+/// layers away from the cause, so it is refused here with the reason.
+@MainActor
+struct LeylineConnectionBridge {
+    /// The namespaced action id, in the style of `terminal.echo` and
+    /// `gitmage.git_op`.
+    static let actionID = "leyline.resolve_connection"
+
+    /// Saved connections, metadata only.
+    let connections: @MainActor () -> [LeylineConnection]
+    /// The same materialization the Connect button and the `connect` tool use.
+    let identity: @MainActor (LeylineConnection) -> SSHIdentityResolution
+
+    /// Answers `{"connection": "<uuid>"}` with a JSON object shaped for the
+    /// host's `SSHConnectionInfo` — `host`, `user`, `port`, `identityPath` — so
+    /// the host side is a straight `JSONDecoder` decode. `remoteWorkingDir` is
+    /// omitted: Leyline does not store one, and the field is optional.
+    func resolve(_ json: String) -> AgentActionResult {
+        guard let data = json.data(using: .utf8),
+              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return .failure("\(Self.actionID): malformed input")
+        }
+        guard let identifier = (object["connection"] as? String)?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !identifier.isEmpty else {
+            return .failure("\(Self.actionID): requires a \"connection\" id.")
+        }
+        // Id only, matched case-insensitively — the same rule `connect` uses,
+        // for the same reason: labels and hostnames are not unique, and the
+        // consequence of guessing wrong is a command run on the wrong machine.
+        guard let conn = connections().first(where: {
+            $0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame
+        }) else {
+            // Not echoed back, matching `LeylineMCPOperations`: this response
+            // can reach the host's logs, and reflecting caller-supplied text is
+            // how a credential pasted into the wrong field escapes.
+            return .failure("\(Self.actionID): no saved connection has that id.")
+        }
+
+        switch identity(conn) {
+        case .identity(let materialized):
+            let info: [String: Any] = [
+                "host": conn.host,
+                "user": conn.username,
+                "port": conn.port,
+                "identityPath": materialized.path,
+            ]
+            guard let encoded = try? JSONSerialization.data(withJSONObject: info) else {
+                return .failure("\(Self.actionID): could not encode the connection.")
+            }
+            return .success(String(decoding: encoded, as: UTF8.self))
+
+        case .passwordAuth:
+            return .failure(
+                "Connection \"\(label(conn))\" authenticates with a password, and background "
+                + "execution runs ssh with BatchMode=yes — which disables every interactive "
+                + "prompt, so a password can never be supplied. Password-only connections "
+                + "cannot be used for background commands at all. Attach an SSH key to this "
+                + "connection in the Leyline app, or open an interactive Terminal session with "
+                + "the connect tool instead.")
+
+        case .noKeySelected:
+            return .failure("Connection \"\(label(conn))\" uses key authentication but has no key "
+                            + "selected. Pick one in the Leyline app.")
+        case .keyUnavailable:
+            return .failure("Connection \"\(label(conn))\" uses key authentication but its key is "
+                            + "no longer in Leyline's vault. Re-import it in the Leyline app.")
+        case .materializationFailed:
+            return .failure("Connection \"\(label(conn))\": Leyline could not write a protected "
+                            + "copy of its key for ssh to read.")
+        }
+    }
+
+    private func label(_ conn: LeylineConnection) -> String {
+        conn.label.isEmpty ? conn.host : conn.label
+    }
+}
+
+private extension AgentActionResult {
+    static func success(_ text: String) -> AgentActionResult { .init(text: text, isError: false) }
+    static func failure(_ text: String) -> AgentActionResult { .init(text: text, isError: true) }
+}

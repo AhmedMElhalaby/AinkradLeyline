@@ -150,7 +150,8 @@ enum LeylineMCPServer {
              "List the SSH hosts saved in Leyline. Returns each connection's id, label, "
              + "username, host, port and which authentication method it uses. Never returns "
              + "passwords, private keys or passphrases — those cannot be read from here at "
-             + "all. Use the returned id with connect.",
+             + "all. Pass the returned label to connect (the id also works, and is needed "
+             + "only when two connections share a label).",
              readOnly: true,
              schemaJSON: schema(
                 properties: [
@@ -168,16 +169,20 @@ enum LeylineMCPServer {
              schemaJSON: schema(properties: [], required: [])),
 
         Tool("connect", "connect",
-             "Open a Terminal session to a saved connection, by id. This starts an "
+             "Open a Terminal session to a saved connection. This starts an "
              + "authenticated SSH session to a REMOTE machine using the user's stored "
-             + "credentials, so it needs approval. Call list_connections first to get the "
-             + "id — a label or hostname is not accepted, because they are not unique and "
-             + "guessing would open a session to the wrong machine.",
+             + "credentials, so it needs approval. Call list_connections first, then pass "
+             + "the connection's label — the label is what the user reads on the approval "
+             + "card. Use the id only when two connections share a label. A hostname is "
+             + "never accepted.",
              destructive: true,
              schemaJSON: schema(
                 properties: [
                     ("connection", "string",
-                     "The connection's id, exactly as returned by list_connections."),
+                     "The connection's label, exactly as returned by list_connections — "
+                     + "prefer the label so the approval prompt names a machine the user "
+                     + "recognises. The id is also accepted, and is required when two "
+                     + "connections share the same label."),
                 ], required: ["connection"])),
     ]
 

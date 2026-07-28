@@ -129,14 +129,25 @@ struct LeylineMCPOperations {
     private func connect(_ object: [String: Any]) -> AgentActionResult {
         guard let identifier = (object["connection"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines), !identifier.isEmpty else {
-            return .failure("connect requires a \"connection\" (an id from list_connections).")
+            return .failure("connect requires a \"connection\" (an id or label from "
+                            + "list_connections).")
         }
         let all = catalog.connections()
         guard !all.isEmpty else { return .failure(Self.noConnectionsMessage) }
-        // Id only. A label or hostname would be tempting, but they are not
-        // unique — two connections can share a host with different usernames —
-        // and picking the wrong one here opens a session to the wrong machine.
-        guard let conn = all.first(where: { $0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame }) else {
+        // Id, or a label naming exactly one connection — decided by
+        // `ConnectionAddress`, the same type the host bridge uses, so both
+        // surfaces answer the same string identically. A hostname is still not
+        // addressable: it is not a user-chosen name, and two connections to one
+        // host with different usernames are normal rather than a mistake.
+        let conn: LeylineConnection
+        switch ConnectionAddress.resolve(identifier, in: all) {
+        case .one(let match):
+            conn = match
+        case .ambiguous(let label, let count):
+            // Never a silent pick — that was the whole objection to matching on
+            // anything but an id, and this is the answer to it.
+            return .failure(ConnectionAddress.ambiguityMessage(label: label, count: count))
+        case .notFound:
             // The rejected identifier is deliberately NOT echoed back.
             //
             // This looks like lost actionability, and it costs almost nothing:
@@ -149,7 +160,7 @@ struct LeylineMCPOperations {
             // caller text also gives a prompt-injection payload a free ride
             // back into the transcript. `LeylineMCPCredentialLeakTests` calls
             // every tool with the seeded secret as its argument and pins this.
-            return .failure("No saved connection has that id. "
+            return .failure("No saved connection has that id or label. "
                             + "Call list_connections to get the id of the host you mean.")
         }
 

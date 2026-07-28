@@ -381,23 +381,57 @@ struct LeylineMCPServerTests {
         #expect(reply.text.contains("prompt for the password"))
     }
 
-    @Test("connect matches ids case-insensitively but never by label or host")
-    func connectMatchesByIdOnly() async {
+    /// Revisits the earlier "id only" rule, in step with the host bridge. A
+    /// label is addressable because the approval card the user reads shows the
+    /// identifier verbatim; the ambiguity that motivated "id only" is answered
+    /// by erroring on it (below), not by refusing every label.
+    @Test("connect matches ids and unique labels case-insensitively, hosts never")
+    func connectMatchesByIdOrUniqueLabel() async {
         let fixture = makeFixture()
         let launcher = FakeLauncher()
         let (server, _) = makeServer(store: fixture.store, launcher: launcher)
         let lowered = await call(server, "connect",
                                  ["connection": fixture.keyConn.id.uuidString.lowercased()])
         #expect(!lowered.isError)
-        // Labels and hostnames are not unique — two connections can share a
-        // host with different usernames — so resolving by them could open a
-        // session to the wrong machine.
-        for identifier in ["Prod web", "web.example.com"] {
-            let reply = await call(server, "connect", ["connection": identifier])
-            #expect(reply.isError)
-            #expect(reply.text.contains("list_connections"))
-        }
-        #expect(launcher.opened.count == 1)
+        let byLabel = await call(server, "connect", ["connection": "PROD WEB"])
+        #expect(!byLabel.isError)
+        #expect(launcher.opened.count == 2)
+        #expect(SSHLaunchPayload(json: launcher.opened[1].payload)?.host == "web.example.com")
+        // A hostname stays unaddressable: it is not a user-chosen name, and two
+        // connections to one host with different usernames are normal.
+        let byHost = await call(server, "connect", ["connection": "web.example.com"])
+        #expect(byHost.isError)
+        #expect(byHost.text.contains("list_connections"))
+        #expect(launcher.opened.count == 2)
+    }
+
+    @Test("connect prefers an exact id over a connection LABELLED with that id")
+    func connectIdBeatsLabel() async {
+        let fixture = makeFixture()
+        let launcher = FakeLauncher()
+        _ = fixture.store.addConnection(label: fixture.keyConn.id.uuidString,
+                                        host: "decoy.example.com", port: 22, username: "root",
+                                        authMode: .key, keyID: fixture.key.id, password: nil)
+        let (server, _) = makeServer(store: fixture.store, launcher: launcher)
+        let reply = await call(server, "connect", ["connection": fixture.keyConn.id.uuidString])
+        #expect(!reply.isError)
+        #expect(SSHLaunchPayload(json: launcher.opened[0].payload)?.host == "web.example.com")
+    }
+
+    @Test("connect refuses an ambiguous label instead of guessing a machine")
+    func connectAmbiguousLabel() async {
+        let fixture = makeFixture()
+        let launcher = FakeLauncher()
+        _ = fixture.store.addConnection(label: "Prod web", host: "web2.example.com", port: 22,
+                                        username: "deploy", authMode: .key, keyID: fixture.key.id,
+                                        password: nil)
+        let (server, _) = makeServer(store: fixture.store, launcher: launcher)
+        let reply = await call(server, "connect", ["connection": "prod web"])
+        #expect(reply.isError)
+        #expect(reply.text.contains("2 saved connections share the label \"Prod web\""))
+        #expect(reply.text.contains("pass the id"))
+        // Nothing opened — ambiguity must never silently pick.
+        #expect(launcher.opened.isEmpty)
     }
 }
 

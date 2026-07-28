@@ -74,18 +74,26 @@ struct LeylineConnectionBridge {
         }
         guard let identifier = (object["connection"] as? String)?
             .trimmingCharacters(in: .whitespacesAndNewlines), !identifier.isEmpty else {
-            return .failure("\(Self.actionID): requires a \"connection\" id.")
+            return .failure("\(Self.actionID): requires a \"connection\" id or label.")
         }
-        // Id only, matched case-insensitively — the same rule `connect` uses,
-        // for the same reason: labels and hostnames are not unique, and the
-        // consequence of guessing wrong is a command run on the wrong machine.
-        guard let conn = connections().first(where: {
-            $0.id.uuidString.caseInsensitiveCompare(identifier) == .orderedSame
-        }) else {
-            // Not echoed back, matching `LeylineMCPOperations`: this response
-            // can reach the host's logs, and reflecting caller-supplied text is
-            // how a credential pasted into the wrong field escapes.
-            return .failure("\(Self.actionID): no saved connection has that id.")
+        // Id or unique label, matched case-insensitively — the same rule
+        // `connect` uses, decided by the same type so the two surfaces cannot
+        // drift apart. A readable identifier matters most HERE: the host's
+        // approval card prints this string verbatim above the command it gates,
+        // and a UUID there defeats the point of showing it.
+        let conn: LeylineConnection
+        switch ConnectionAddress.resolve(identifier, in: connections()) {
+        case .one(let match):
+            conn = match
+        case .ambiguous(let label, let count):
+            return .failure("\(Self.actionID): "
+                            + ConnectionAddress.ambiguityMessage(label: label, count: count))
+        case .notFound:
+            // The caller's own text is not echoed back, matching
+            // `LeylineMCPOperations`: this response can reach the host's logs,
+            // and reflecting caller-supplied text is how a credential pasted
+            // into the wrong field escapes.
+            return .failure("\(Self.actionID): no saved connection has that id or label.")
         }
 
         // Checked BEFORE `identity`, deliberately: materializing writes a

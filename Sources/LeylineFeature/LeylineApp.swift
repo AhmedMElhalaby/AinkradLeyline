@@ -88,6 +88,7 @@ public struct LeylineApp: AinkradApp {
             let store = store(for: host)
             let bridge = LeylineConnectionBridge(
                 connections: { store.connections },
+                keys: { store.keys },
                 identity: { SSHIdentityResolver.resolve($0, store: store) })
             let token = host.actions.register(actionID: LeylineConnectionBridge.actionID) { json in
                 bridge.resolve(json)

@@ -24,7 +24,8 @@ private let secretMarker = "AINKRAD-FAKE-SECRET-MATERIAL-DO-NOT-LEAK-8F2A"
 @MainActor
 private func makeFixture() -> (bridge: LeylineConnectionBridge, store: LeylineStore,
                                keyConn: LeylineConnection, passwordConn: LeylineConnection,
-                               key: LeylineKey) {
+                               key: LeylineKey, lockedConn: LeylineConnection,
+                               lockedKey: LeylineKey) {
     let store = LeylineStore(documents: FakeDocs(), secrets: FakeSecrets())
     let key = store.importKey(
         label: "Prod deploy key",
@@ -37,10 +38,21 @@ private func makeFixture() -> (bridge: LeylineConnectionBridge, store: LeylineSt
     let passwordConn = store.addConnection(label: "Legacy box", host: "legacy.example.com",
                                            port: 22, username: "root", authMode: .password,
                                            keyID: nil, password: "password-\(secretMarker)")
+    // A passphrase-protected key: same headless dead end as a password, since
+    // `BatchMode=yes` disables the passphrase prompt too.
+    let lockedKey = store.importKey(
+        label: "Locked key",
+        privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\n\(secretMarker)\n"
+            + "-----END OPENSSH PRIVATE KEY-----",
+        passphrase: "passphrase-\(secretMarker)")
+    let lockedConn = store.addConnection(label: "Staging box", host: "staging.example.com",
+                                         port: 22, username: "deploy", authMode: .key,
+                                         keyID: lockedKey.id, password: nil)
     let bridge = LeylineConnectionBridge(
         connections: { store.connections },
+        keys: { store.keys },
         identity: { SSHIdentityResolver.resolve($0, store: store) })
-    return (bridge, store, keyConn, passwordConn, key)
+    return (bridge, store, keyConn, passwordConn, key, lockedConn, lockedKey)
 }
 
 @MainActor
@@ -96,6 +108,39 @@ struct LeylineConnectionBridgeTests {
         // And it is a refusal, not a connection that will fail later.
         #expect(!reply.text.contains("identityPath"))
         #expect(!reply.text.contains(secretMarker))
+    }
+
+    /// The same dead end as a password, one layer down: `BatchMode=yes` also
+    /// disables the "Enter passphrase for key" prompt, so a locked key cannot
+    /// be unlocked in a headless run. Without this it resolved happily and the
+    /// user saw a `ConnectTimeout` ten seconds later with no cause named.
+    @Test("a passphrase-protected key is refused, naming the BatchMode limitation")
+    func passphraseProtectedKeyIsRefused() {
+        let fixture = makeFixture()
+        let reply = resolve(fixture.bridge, fixture.lockedConn.id.uuidString)
+        #expect(reply.isError)
+        #expect(reply.text.contains("BatchMode=yes"))
+        #expect(reply.text.contains("passphrase"))
+        // Actionable: it names the key and says what to do instead.
+        #expect(reply.text.contains("Locked key"))
+        #expect(reply.text.contains("Staging box"))
+        #expect(reply.text.contains("connect"))
+        // A refusal, not a connection that will time out later.
+        #expect(!reply.text.contains("identityPath"))
+        // And the passphrase itself never crosses the boundary — only the bool.
+        #expect(!reply.text.contains(secretMarker))
+    }
+
+    /// The counterpart: the refusal is scoped to *locked* keys. A bare key is
+    /// exactly what headless execution wants and must keep resolving.
+    @Test("a bare (unprotected) key still resolves")
+    func bareKeyStillResolves() throws {
+        let fixture = makeFixture()
+        let reply = resolve(fixture.bridge, fixture.keyConn.id.uuidString)
+        #expect(!reply.isError)
+        let info = try JSONDecoder().decode(SSHConnectionInfo.self, from: Data(reply.text.utf8))
+        #expect(info.host == "web.example.com")
+        #expect(info.identityPath != nil)
     }
 
     @Test("an unknown id is a clear error and resolves nothing")

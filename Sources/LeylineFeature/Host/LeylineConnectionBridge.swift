@@ -34,6 +34,21 @@ import AinkradAppKit
 /// password-only connection can never authenticate in background execution.
 /// Returning it anyway would produce a confusing `Permission denied` several
 /// layers away from the cause, so it is refused here with the reason.
+///
+/// ## Neither can a passphrase-protected key, for the same reason
+///
+/// `BatchMode=yes` disables *every* prompt, not just the password one — "Enter
+/// passphrase for key" is suppressed too. A locked key therefore fails headless
+/// exactly like a password connection, but less legibly: it used to resolve
+/// happily and surface ten seconds later as an unexplained `ConnectTimeout`. So
+/// it gets its own refusal here.
+///
+/// That check needs one extra fact from the store — `LeylineKey.hasPassphrase`
+/// — which is why this type takes a `keys` closure alongside `connections`. It
+/// is a `Bool` *describing* a secret, not the secret: the passphrase itself is
+/// readable only through `LeylineStore.passphrase(for:)`, which nothing here
+/// can reach, and `LeylineKey` is the same pure-metadata value type the MCP
+/// catalog already hands across its boundary.
 @MainActor
 struct LeylineConnectionBridge {
     /// The namespaced action id, in the style of `terminal.echo` and
@@ -42,6 +57,9 @@ struct LeylineConnectionBridge {
 
     /// Saved connections, metadata only.
     let connections: @MainActor () -> [LeylineConnection]
+    /// Imported keys, metadata only — read for `hasPassphrase` and nothing else.
+    /// Never key material and never the passphrase.
+    let keys: @MainActor () -> [LeylineKey]
     /// The same materialization the Connect button and the `connect` tool use.
     let identity: @MainActor (LeylineConnection) -> SSHIdentityResolution
 
@@ -68,6 +86,25 @@ struct LeylineConnectionBridge {
             // can reach the host's logs, and reflecting caller-supplied text is
             // how a credential pasted into the wrong field escapes.
             return .failure("\(Self.actionID): no saved connection has that id.")
+        }
+
+        // Checked BEFORE `identity`, deliberately: materializing writes a
+        // plaintext copy of the key to disk, and there is no reason to write
+        // one for a connection we are about to refuse. Scoped to `.key` so a
+        // password connection still gets its own, more specific message; a
+        // missing key still falls through to `.keyUnavailable` below.
+        if conn.authMode == .key,
+           let keyID = conn.keyID,
+           let key = keys().first(where: { $0.id == keyID }), key.hasPassphrase {
+            return .failure(
+                "Connection \"\(label(conn))\" uses key \"\(key.label)\", which is "
+                + "passphrase-protected, and background execution runs ssh with "
+                + "BatchMode=yes — which disables every interactive prompt, including "
+                + "\"Enter passphrase for key\". A locked key can never be unlocked for a "
+                + "background command; left to run it would fail as an unexplained "
+                + "connection timeout. Attach a key with no passphrase to this connection "
+                + "in the Leyline app, or open an interactive Terminal session with the "
+                + "connect tool instead.")
         }
 
         switch identity(conn) {

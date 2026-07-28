@@ -14,7 +14,10 @@ settings:
 packages:
   AinkradAppKit:
     url: https://github.com/AhmedMElhalaby/AinkradAppKit
-    revision: dd96b2daf1cd528cf4c8b77cccffbed3fb066fb3
+    # Must be <= the revision the HOST embeds. A plugin built against a newer
+    # SDK than the host ships cannot resolve its symbols and dies at
+    # `Bundle.load()`. This is the host's current pin.
+    revision: d5d994bdd8e79d530410a1c370657fa593fa4ce6
 targets:
   LeylineFeature:
     type: library.static

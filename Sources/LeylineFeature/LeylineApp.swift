@@ -36,6 +36,33 @@ public struct LeylineApp: AinkradApp {
         }
     }
 
+    /// The per-host MCP server, created once and cached — the same shape as
+    /// `stores`, keyed by the same instance id, because the server MUST read the
+    /// store the window is showing. Building a fresh `LeylineStore` per call
+    /// would hand the assistant a detached second copy that reloads the document
+    /// from disk and never sees a connection the user just added.
+    @MainActor private static let mcpServers = PluginInstanceStorage<MCPAppServer>()
+
+    @MainActor static func mcpServer(for host: HostServices) -> MCPAppServer {
+        mcpServers.value(for: instance(of: host)) {
+            // `LeylineCatalog(store:launcher:)` is the ONLY place the store
+            // crosses into the MCP layer, and it crosses as three closures over
+            // non-secret value types. `LeylineMCPOperations` therefore has no
+            // route to `privateKey`/`passphrase`/`password` — see that type.
+            let operations = LeylineMCPOperations(
+                catalog: LeylineCatalog(store: store(for: host), launcher: host.apps))
+            let (server, failures) = LeylineMCPServer.make(
+                appID: id,
+                perform: { json in await operations.run(json) })
+            // A dropped tool is a silently missing capability — say so rather
+            // than let the assistant just never see it.
+            if !failures.isEmpty {
+                host.log.error("Leyline MCP: tools rejected — \(failures.joined(separator: ", "))")
+            }
+            return server
+        }
+    }
+
     public static func makeRootView(host: HostServices) -> AnyView {
         AnyView(LeylineRootView(store: store(for: host), theme: host.theme, launcher: host.apps))
     }
@@ -49,6 +76,15 @@ public struct LeylineApp: AinkradApp {
     }
 }
 
+/// Publishes Leyline's connection catalogue to the host assistant as MCP tools.
+/// Cached per host by `mcpServer(for:)`, so the assistant reads the same store
+/// the window shows.
+extension LeylineApp: AinkradAppMCP {
+    public static func makeMCPServer(host: HostServices) -> MCPAppServer {
+        mcpServer(for: host)
+    }
+}
+
 /// Generation 8: purge materialized private keys when this instance closes.
 ///
 /// `SSHKeyMaterializer` writes plaintext private keys to Application Support so
@@ -59,6 +95,11 @@ public struct LeylineApp: AinkradApp {
 extension LeylineApp: AinkradAppTeardown {
     public static func teardown(instance: PluginInstanceID) {
         stores.remove(instance)
+        // The MCP server's tool closures capture the catalog, which captures
+        // this instance's store. Leaving it registered would keep a closed
+        // instance's connection list alive for the rest of the process and let
+        // the assistant keep connecting through an app the user shut.
+        mcpServers.remove(instance)
         SSHKeyMaterializer.purgeAll()
     }
 }

@@ -36,8 +36,70 @@ public struct LeylineApp: AinkradApp {
         }
     }
 
+    /// The per-host MCP server, created once and cached — the same shape as
+    /// `stores`, keyed by the same instance id, because the server MUST read the
+    /// store the window is showing. Building a fresh `LeylineStore` per call
+    /// would hand the assistant a detached second copy that reloads the document
+    /// from disk and never sees a connection the user just added.
+    @MainActor private static let mcpServers = PluginInstanceStorage<MCPAppServer>()
+
+    @MainActor static func mcpServer(for host: HostServices) -> MCPAppServer {
+        mcpServers.value(for: instance(of: host)) {
+            // `LeylineCatalog(store:launcher:)` is the ONLY place the store
+            // crosses into the MCP layer, and it crosses as three closures over
+            // non-secret value types. `LeylineMCPOperations` therefore has no
+            // route to `privateKey`/`passphrase`/`password` — see that type.
+            let operations = LeylineMCPOperations(
+                catalog: LeylineCatalog(store: store(for: host), launcher: host.apps))
+            let (server, failures) = LeylineMCPServer.make(
+                appID: id,
+                perform: { json in await operations.run(json) })
+            // A dropped tool is a silently missing capability — say so rather
+            // than let the assistant just never see it.
+            if !failures.isEmpty {
+                host.log.error("Leyline MCP: tools rejected — \(failures.joined(separator: ", "))")
+            }
+            return server
+        }
+    }
+
+    /// The `leyline.resolve_connection` registration for one instance, kept
+    /// with the provider that owns it so `teardown` can actually unregister —
+    /// `AinkradAppTeardown.teardown(instance:)` gets no `HostServices`.
+    private struct ActionRegistration {
+        let provider: AgentActionProvider
+        let token: AgentActionToken
+    }
+    @MainActor private static let actionTokens = PluginInstanceStorage<ActionRegistration>()
+
+    /// Registers this host's **host-only** action, once per instance.
+    ///
+    /// This is not an MCP tool and must never become one: its reply carries
+    /// `identityPath`, a filesystem path to a plaintext private key. Registering
+    /// through `host.actions` puts it in `AgentActionRegistryHub`, which only
+    /// host code invokes — see `LeylineConnectionBridge`.
+    ///
+    /// Called from `makeMCPServer` as well as `makeRootView` because the whole
+    /// point is headless execution: the bridge has to answer with no Leyline
+    /// window open, and `makeRootView` runs only when one is.
+    @MainActor static func registerActions(for host: HostServices) {
+        let id = instance(of: host)
+        _ = actionTokens.value(for: id) {
+            let store = store(for: host)
+            let bridge = LeylineConnectionBridge(
+                connections: { store.connections },
+                keys: { store.keys },
+                identity: { SSHIdentityResolver.resolve($0, store: store) })
+            let token = host.actions.register(actionID: LeylineConnectionBridge.actionID) { json in
+                bridge.resolve(json)
+            }
+            return ActionRegistration(provider: host.actions, token: token)
+        }
+    }
+
     public static func makeRootView(host: HostServices) -> AnyView {
-        AnyView(LeylineRootView(store: store(for: host), theme: host.theme, launcher: host.apps))
+        registerActions(for: host)
+        return AnyView(LeylineRootView(store: store(for: host), theme: host.theme, launcher: host.apps))
     }
 
     public static func makeSettingsView(host: HostServices) -> AnyView {
@@ -46,6 +108,19 @@ public struct LeylineApp: AinkradApp {
 
     public static func chromeFill(host: HostServices) -> Color? {
         host.theme.tokens.background
+    }
+}
+
+/// Publishes Leyline's connection catalogue to the host assistant as MCP tools.
+/// Cached per host by `mcpServer(for:)`, so the assistant reads the same store
+/// the window shows.
+extension LeylineApp: AinkradAppMCP {
+    public static func makeMCPServer(host: HostServices) -> MCPAppServer {
+        // The host resolves this at plugin load, which is the earliest reliable
+        // hook a headless plugin gets — so the connection bridge is live before
+        // anyone opens Leyline's window.
+        registerActions(for: host)
+        return mcpServer(for: host)
     }
 }
 
@@ -59,6 +134,17 @@ public struct LeylineApp: AinkradApp {
 extension LeylineApp: AinkradAppTeardown {
     public static func teardown(instance: PluginInstanceID) {
         stores.remove(instance)
+        // The MCP server's tool closures capture the catalog, which captures
+        // this instance's store. Leaving it registered would keep a closed
+        // instance's connection list alive for the rest of the process and let
+        // the assistant keep connecting through an app the user shut.
+        mcpServers.remove(instance)
+        // The action handler captures this instance's store too, so leaving it
+        // registered would let the host keep resolving connections through an
+        // app the user shut.
+        if let registration = actionTokens.remove(instance) {
+            registration.provider.remove(registration.token)
+        }
         SSHKeyMaterializer.purgeAll()
     }
 }

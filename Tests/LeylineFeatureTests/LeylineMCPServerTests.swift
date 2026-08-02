@@ -157,8 +157,8 @@ struct LeylineMCPCredentialLeakTests {
         ]
         // …and the same set again with every launch failure the host can
         // report, because those take different text paths.
-        for outcome in [PluginLaunchOutcome.unknownApp("terminal"),
-                        .disabled("terminal"),
+        for outcome in [PluginLaunchOutcome.unknownApp("rune"),
+                        .disabled("rune"),
                         .refused(reason: "bad payload")] {
             launcher.outcome = outcome
             for (name, arguments) in calls where name == "connect" {
@@ -182,7 +182,7 @@ struct LeylineMCPCredentialLeakTests {
                            tool: "tools/list", arguments: [:])
         }
 
-        // The payload handed to Terminal is a channel the model never sees, and
+        // The payload handed to Rune is a channel the model never sees, and
         // it now legitimately carries a materialized identity path — but it must
         // still carry no key MATERIAL.
         for opened in launcher.opened {
@@ -344,7 +344,7 @@ struct LeylineMCPServerTests {
         #expect(!reply.text.contains("Prod web"))
     }
 
-    @Test("connect hands Terminal a validated ssh payload for the right host")
+    @Test("connect hands Rune a validated ssh payload for the right host")
     func connectOpensTerminal() async {
         let fixture = makeFixture()
         let launcher = FakeLauncher()
@@ -352,7 +352,7 @@ struct LeylineMCPServerTests {
         let reply = await call(server, "connect", ["connection": fixture.keyConn.id.uuidString])
         #expect(!reply.isError)
         #expect(launcher.opened.count == 1)
-        #expect(launcher.opened[0].appID == "terminal")
+        #expect(launcher.opened[0].appID == "rune")
         let payload = SSHLaunchPayload(json: launcher.opened[0].payload)
         #expect(payload?.host == "web.example.com")
         #expect(payload?.port == 2222)
@@ -464,14 +464,14 @@ struct LeylineMCPEdgeCaseTests {
         }
     }
 
-    @Test("Terminal missing, disabled or refusing each gets its own actionable text")
+    @Test("Rune missing, disabled or refusing each gets its own actionable text")
     func terminalUnavailable() async {
         let fixture = makeFixture()
         let launcher = FakeLauncher()
         let (server, _) = makeServer(store: fixture.store, launcher: launcher)
         let expectations: [(PluginLaunchOutcome, String)] = [
-            (.unknownApp("terminal"), "isn't installed"),
-            (.disabled("terminal"), "is disabled"),
+            (.unknownApp("rune"), "isn't installed"),
+            (.disabled("rune"), "is disabled"),
             (.refused(reason: "bad payload"), "bad payload"),
         ]
         for (outcome, fragment) in expectations {

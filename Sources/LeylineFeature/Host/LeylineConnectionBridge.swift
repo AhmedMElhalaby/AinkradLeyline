@@ -11,7 +11,7 @@ import AinkradAppKit
 /// with `connection: nil` since it was written, because "Leyline/AinkradSSH has
 /// no host-side connection bridge". This is that bridge. Once it answers, the
 /// assistant can run a command on a remote host through the host's own gating —
-/// approvals, `CommandRisk`, streaming, timeouts — with no Terminal window.
+/// approvals, `CommandRisk`, streaming, timeouts — with no Rune window.
 ///
 /// **It is registered on `AgentActionProvider`, and it must never become an MCP
 /// tool.** The two surfaces look similar and are not: `MCPAppServer.addTool`
@@ -111,7 +111,7 @@ struct LeylineConnectionBridge {
                 + "\"Enter passphrase for key\". A locked key can never be unlocked for a "
                 + "background command; left to run it would fail as an unexplained "
                 + "connection timeout. Attach a key with no passphrase to this connection "
-                + "in the Leyline app, or open an interactive Terminal session with the "
+                + "in the Leyline app, or open an interactive terminal session in Rune with the "
                 + "connect tool instead.")
         }
 
@@ -134,7 +134,7 @@ struct LeylineConnectionBridge {
                 + "execution runs ssh with BatchMode=yes — which disables every interactive "
                 + "prompt, so a password can never be supplied. Password-only connections "
                 + "cannot be used for background commands at all. Attach an SSH key to this "
-                + "connection in the Leyline app, or open an interactive Terminal session with "
+                + "connection in the Leyline app, or open an interactive terminal session in Rune with "
                 + "the connect tool instead.")
 
         case .noKeySelected:

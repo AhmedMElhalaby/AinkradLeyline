@@ -33,7 +33,7 @@ import AinkradAppKit
 ///   plugin already holds in memory and touch nothing.
 /// - `connect` — **`destructive: true`.** This is a judgement call and it is
 ///   worth stating plainly, because `connect` is not irreversible in the data
-///   sense: it opens a Terminal window, and closing it undoes everything on
+///   sense: it opens a Rune window, and closing it undoes everything on
 ///   THIS machine. The reason it is gated anyway is that the consequence is not
 ///   on this machine. It opens an authenticated session to a REMOTE host, using
 ///   credentials the user stored, on the user's behalf — the same reasoning
@@ -51,7 +51,7 @@ import AinkradAppKit
 /// tools are plainly headless.
 ///
 /// `connect` is the one that invites the wrong answer, because it visibly opens
-/// a window — but it opens **Terminal's** window, through `host.apps`, and the
+/// a window — but it opens **Rune's** window, through `host.apps`, and the
 /// host launches that app itself. Setting the flag would force Leyline's window
 /// open too: an unrelated second window appearing every time the assistant
 /// connects, for no reason. The flag is about the CALLEE's window, never the
@@ -169,7 +169,7 @@ enum LeylineMCPServer {
              schemaJSON: schema(properties: [], required: [])),
 
         Tool("connect", "connect",
-             "Open a Terminal session to a saved connection. This starts an "
+             "Open a Rune session to a saved connection. This starts an "
              + "authenticated SSH session to a REMOTE machine using the user's stored "
              + "credentials, so it needs approval. Call list_connections first, then pass "
              + "the connection's label — the label is what the user reads on the approval "

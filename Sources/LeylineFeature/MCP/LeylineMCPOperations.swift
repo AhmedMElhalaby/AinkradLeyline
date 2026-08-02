@@ -30,7 +30,7 @@ import AinkradAppKit
 ///   key material (dangerous — transcripts persist) with the app *writing* a key
 ///   file because the model named a saved connection id (not dangerous — the
 ///   human approves, and neither the key nor its path comes back). The result
-///   was a tool that opened Terminal and then failed with `Permission denied`
+///   was a tool that opened Rune and then failed with `Permission denied`
 ///   for every host whose key lives only in Leyline's vault. What stays true is
 ///   the part that mattered: no key material, passphrase, password **or
 ///   materialized path** appears in any result, error or argument echo.
@@ -166,7 +166,7 @@ struct LeylineMCPOperations {
 
         // Materialize the stored key exactly as the Connect button does. The
         // failure modes are reported as failures rather than silently degraded
-        // to "try ssh-agent and hope": a connect that opens Terminal and then
+        // to "try ssh-agent and hope": a connect that opens Rune and then
         // says Permission denied is the bug this replaces.
         let resolution = catalog.identity(conn)
         switch resolution {
@@ -185,7 +185,7 @@ struct LeylineMCPOperations {
                             + "protected copy of its key for ssh to read.")
         }
         // `resolution.path` is the ONLY read of the materialized path in this
-        // file, and it goes straight into the payload Terminal receives — a
+        // file, and it goes straight into the payload Rune receives — a
         // channel the model never sees.
         let payload = SSHLaunchPayload(host: conn.host, port: conn.port,
                                        username: conn.username, identityFile: resolution.path)
@@ -202,28 +202,28 @@ struct LeylineMCPOperations {
         // connect" with no reason is a dead end for the person reading it.
         switch catalog.launch(safe) {
         case .opened:
-            var text = "Opened a Terminal session to \(label(conn)) "
+            var text = "Opened a terminal session in Rune to \(label(conn)) "
                 + "(\(conn.username.isEmpty ? "" : "\(conn.username)@")\(conn.host):\(conn.port))."
             // Say which credential is in play, without naming where it lives.
             if resolution.path != nil {
                 text += " It authenticates with the SSH key stored in Leyline."
             } else {
-                // Password auth is fine here: a human is sitting at the Terminal
+                // Password auth is fine here: a human is sitting at the Rune
                 // window `ssh` is about to prompt in. (It is NOT fine for
                 // background execution — see `LeylineConnectionBridge`.)
-                text += " This connection uses password authentication, so Terminal will prompt "
+                text += " This connection uses password authentication, so Rune will prompt "
                     + "for the password."
             }
             return .success(text)
         case .unknownApp:
-            return .failure("Couldn't connect to \(label(conn)): the Terminal app isn't installed. "
+            return .failure("Couldn't connect to \(label(conn)): the Rune app isn't installed. "
                             + "Install it from Ainkrad's App Store, then try again.")
         case .disabled:
-            return .failure("Couldn't connect to \(label(conn)): the Terminal app is disabled. "
+            return .failure("Couldn't connect to \(label(conn)): the Rune app is disabled. "
                             + "Enable it in Ainkrad's App Store, then try again.")
         case .refused(let why):
             return .failure("Couldn't connect to \(label(conn)): the host refused to open "
-                            + "Terminal — \(why)")
+                            + "Rune — \(why)")
         // `PluginLaunchOutcome` lives in a resilient module, so a newer SDK may
         // add a case this build has never seen. Treat unknown as FAILURE: a
         // false "connected" is worse than a false "didn't".

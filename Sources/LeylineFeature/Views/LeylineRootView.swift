@@ -13,7 +13,7 @@ struct LeylineRootView: View {
     @State private var copied: UUID?
     @State private var hovered: UUID?
     /// Non-nil when the last connect attempt failed. Surfaces what used to be
-    /// discarded: `apps.open` returned Void, so a missing or disabled Terminal
+    /// discarded: `apps.open` returned Void, so a missing or disabled Rune
     /// looked exactly like a successful launch.
     @State private var launchError: String?
 
@@ -155,7 +155,7 @@ struct LeylineRootView: View {
         let identityFile = SSHIdentityResolver.resolve(conn, store: store).path
         // `SSHLaunchPayload` is now the SHARED SDK type — one definition,
         // versioned, and validated on both sides. Leyline previously had its
-        // own `Encodable` struct and Terminal its own `Decodable` mirror, kept
+        // own `Encodable` struct and Rune its own `Decodable` mirror, kept
         // in sync by hand across two repos.
         let payload = SSHLaunchPayload(
             host: conn.host, port: conn.port, username: conn.username, identityFile: identityFile
@@ -169,20 +169,20 @@ struct LeylineRootView: View {
             return
         }
         // Report the outcome instead of discarding it. `open(appID:payload:)`
-        // returns Void, so this button looked identical whether Terminal opened
+        // returns Void, so this button looked identical whether Rune opened
         // or was not installed at all.
         let outcome = (launcher as? PluginAppLauncherResult)?
-            .openReportingOutcome(appID: "terminal", payload: safe.json)
-            ?? { launcher.open(appID: "terminal", payload: safe.json); return .opened }()
+            .openReportingOutcome(appID: "rune", payload: safe.json)
+            ?? { launcher.open(appID: "rune", payload: safe.json); return .opened }()
         switch outcome {
         case .opened:            launchError = nil
-        case .unknownApp:        launchError = "Terminal isn't installed — install it from the App Store."
-        case .disabled:          launchError = "Terminal is disabled — enable it in the App Store."
-        case .refused(let why):  launchError = "Couldn't open Terminal: \(why)"
+        case .unknownApp:        launchError = "Rune isn't installed — install it from the App Store."
+        case .disabled:          launchError = "Rune is disabled — enable it in the App Store."
+        case .refused(let why):  launchError = "Couldn't open Rune: \(why)"
         // `PluginLaunchOutcome` lives in a resilient module, so the compiler
         // requires a default: a newer SDK may add a case this build has never
         // seen. Treat anything unknown as a failure rather than as success.
-        @unknown default:        launchError = "Couldn't open Terminal."
+        @unknown default:        launchError = "Couldn't open Rune."
         }
     }
 }

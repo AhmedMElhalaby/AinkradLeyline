@@ -9,7 +9,7 @@ import Foundation
 /// someone has to reach for `.path` — instead of accidental.
 struct MaterializedIdentity: Equatable, CustomStringConvertible, CustomDebugStringConvertible {
     /// The 0600 file `ssh -i` should read. Only two callers may touch it: the
-    /// `SSHLaunchPayload` handed to Terminal, and the host-only
+    /// `SSHLaunchPayload` handed to Rune, and the host-only
     /// `leyline.resolve_connection` bridge. Never tool output.
     let path: String
 

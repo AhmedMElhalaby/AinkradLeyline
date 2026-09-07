@@ -13,7 +13,7 @@ settings:
     EAGER_LINKING: NO
 packages:
   AinkradAppKit:
-    url: https://github.com/AhmedMElhalaby/AinkradAppKit
+    url: https://github.com/AinkradHQ/AinkradAppKit
     # Must be <= the revision the HOST embeds. A plugin built against a newer
     # SDK than the host ships cannot resolve its symbols and dies at
     # `Bundle.load()`. This is the host's current pin.

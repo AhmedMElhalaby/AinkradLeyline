@@ -59,7 +59,7 @@ struct LeylineCatalog {
     let connections: @MainActor () -> [LeylineConnection]
     /// Imported keys, metadata only. Never key material.
     let keys: @MainActor () -> [LeylineKey]
-    /// Hands a validated SSH launch to the host's Terminal app and reports what
+    /// Hands a validated SSH launch to the host's Rune app and reports what
     /// happened. Injected rather than reached through `HostServices` so the
     /// tests can drive every `PluginLaunchOutcome` case without a live host.
     let launch: @MainActor (SSHLaunchPayload) -> PluginLaunchOutcome
@@ -97,12 +97,12 @@ struct LeylineCatalog {
             // `openReportingOutcome` is the opt-in richer launcher, discovered
             // by dynamic cast. On a host that predates it, fall back to the
             // Void-returning `open` — which cannot distinguish success from a
-            // missing Terminal, so it must report `.opened` optimistically.
+            // missing Rune, so it must report `.opened` optimistically.
             // The UI's connect button makes the same trade in `LeylineRootView`.
             if let reporting = launcher as? PluginAppLauncherResult {
-                return reporting.openReportingOutcome(appID: "terminal", payload: payload.json)
+                return reporting.openReportingOutcome(appID: "rune", payload: payload.json)
             }
-            launcher.open(appID: "terminal", payload: payload.json)
+            launcher.open(appID: "rune", payload: payload.json)
             return .opened
         }
         self.identity = { conn in SSHIdentityResolver.resolve(conn, store: store) }

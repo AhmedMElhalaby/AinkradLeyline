@@ -1,7 +1,7 @@
 import Foundation
 
 /// Writes a Keychain-held private key to a 0600 file so the system `ssh` binary
-/// (spawned by Terminal) can read it. Lives in Application Support; a rebuildable
+/// (spawned by Rune) can read it. Lives in Application Support; a rebuildable
 /// cache — the Keychain remains source of truth.
 ///
 /// ## Two things this must get right

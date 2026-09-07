@@ -31,7 +31,7 @@ struct KeyVaultView: View {
                 emptyKeys
             } else {
                 ScrollView {
-                    VStack(spacing: 2) {
+                    LazyVStack(spacing: 2) {
                         ForEach(store.keys) { key in keyRow(key) }
                     }
                     .padding(.vertical, 4)
